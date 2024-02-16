@@ -1,18 +1,216 @@
 ---
-title: Getting Started
-author: cotes
+title: Handwritten notes while using a web browser.
+author: didi9988
 date: 2019-08-09 20:55:00 +0800
-categories: [Blogging, Tutorial]
+categories: [Blogging, Android, JinTalk Browser]
 tags: [getting started]
 pin: true
 img_path: '/posts/20180809'
 ---
 
-## Prerequisites
+## Concept
+인터넷 강의 또는 웹서핑 도중 스타일러스 펜을 이용하여 바로 필기 형식의 메모와 그림을 그릴 수 있다.
+물론 손가락 터치도 지원한다. 
+- [**Handwritten notes while using a web browser.**](#option-1-using-the-chirpy-starter)
+- Play local file and streaming audio.
 
-Follow dddd22222 the instructions in the [Jekyll Docs](https://jekyllrb.com/docs/installation/) to complete the installation of the basic environment. [Git](https://git-scm.com/) also needs to be installed.
 
-## Installation
+### Feature 1. Handwritten notes
+```java
+// JinStylusDrawImageView.onDraw()
+
+protected void onDraw(Canvas canvas) {
+        super.onDraw(canvas);
+
+        if(getStylusMode() == MainActivity.STYLUS_PEN_MODE
+                || getStylusMode() == MainActivity.STYLUS_ERASE_MODE) {
+
+            if(bufferedImage != null) {
+                canvas.drawBitmap(bufferedImage, 0, 0, paint);
+            }
+
+            if(mPath != null) {
+                canvas.drawPath(mPath, paint);
+            }
+
+            if(dragSelect != null){
+                canvas.drawRect(dragSelect, dragPaint);
+            }
+        }
+    }
+
+```
+
+
+```java
+// JinStylusDrawImageView$TouchListener.onTouch()
+
+public boolean onTouch(@Nullable View view, @NonNull MotionEvent arg1) {
+
+            ...
+
+            mTouchEventAction = arg1.getAction();
+
+            int[] scrollPos = new int[2];
+            scrollView.getLocationOnScreen(scrollPos);
+
+            mPointX = arg1.getRawX()+scrollView.getScrollX();
+            mPointY = arg1.getRawY()-scrollPos[1]+scrollView.getScrollY();
+
+            try {
+                int stylus_mode = getStylusMode();
+
+                if(arg1.getToolType(0) == MotionEvent.TOOL_TYPE_STYLUS){
+                    is_stylus_type = true;
+                }
+
+                if(JinPreferenceUtil.getBoolean(mMainActivity, JinPreferenceUtil.STYLUS_ALLOW_FINGER_DRAW)){
+                    if(arg1.getToolType(0) == MotionEvent.TOOL_TYPE_MOUSE
+                            ||arg1.getToolType(0) == MotionEvent.TOOL_TYPE_FINGER){
+
+                        is_stylus_type = true;
+                    }
+                }
+                else{
+                    if(arg1.getToolType(0) == MotionEvent.TOOL_TYPE_MOUSE
+                            ||arg1.getToolType(0) == MotionEvent.TOOL_TYPE_FINGER){
+
+                        is_stylus_type = false;
+                    }
+                }
+
+                if (mTouchEventAction == MotionEvent.ACTION_DOWN) {
+                    current_touch_mode = TOUCH_DOWN;
+                    if (is_stylus_type) {
+                        touch_down_stylus = true;
+
+                        if(mMainActivity.isActiveDragSelect()) {
+                            dragSelect = new Rect();
+                        }
+                        else{
+                            dragSelect = null;
+                        }
+
+                        if (stylus_mode == MainActivity.STYLUS_PEN_MODE) {
+                            setStylusPenColor(JinPreferenceUtil.getInt(mMainActivity,
+                                    JinPreferenceUtil.STYLUS_PEN_COLOR, R.color.colorRed));
+                            setStylusStroke(JinPreferenceUtil.getInt(mMainActivity,
+                                    JinPreferenceUtil.STYLUS_PEN_SIZE, 2));
+
+                            path = new DrawPath(paint.getColor(), paint.getStrokeWidth());
+
+                            mX = mPointX;
+                            mY = mPointY;
+
+                            path.moveTo(mX, mY);
+                            drawPathList.add(path);
+
+                            mPath.moveTo(mX, mY);
+
+                            System.out.println("touchDown : mY = "+mY);
+                        }
+                        else if(stylus_mode == MainActivity.STYLUS_ERASE_MODE) {
+                            //resetDrawing (true);
+                        }
+
+                        change_update = false;
+                    }
+                    else {
+                        touch_down_stylus = false;
+                    }
+
+                } else if (mTouchEventAction == MotionEvent.ACTION_UP) {
+                    current_touch_mode = TOUCH_UP;
+                    if (is_stylus_type) {
+                        if (stylus_mode == MainActivity.STYLUS_PEN_MODE) {
+                            bitmapCanvas.drawPath(path, paint);
+                            mPath.reset();
+                            invalidate();
+                        }
+                    }
+
+                } else if (mTouchEventAction == MotionEvent.ACTION_MOVE
+                        || mTouchEventAction==S_PEN_ERASE_ACTION) {//211,213
+
+                    current_touch_mode = TOUCH_MOVE;
+
+                    if (is_stylus_type) {
+                        if(mMainActivity.isActiveDragSelect()){
+                            dragSelect.set((int)mX, (int)mY, (int)mPointX, (int)mPointY);
+                            invalidate();
+                            return true;
+                        }
+
+                        if (stylus_mode == MainActivity.STYLUS_PEN_MODE
+                                || stylus_mode == MainActivity.STYLUS_ERASE_MODE) {
+
+                            float x = mPointX;
+                            float y = mPointY;
+
+                            if (stylus_mode == MainActivity.STYLUS_ERASE_MODE
+                                    || mTouchEventAction==S_PEN_ERASE_ACTION) {
+
+                                boolean changed = false;
+                                for (DrawPath in_path : drawPathList) {
+                                    if (in_path.isCollapse(x, y, 20)) {
+                                        in_path.reset();
+
+                                        changed = true;
+                                    }
+                                }
+
+                                if(changed){
+                                    resetDrawing (true);
+                                    for (DrawPath in_path : drawPathList) {
+                                        in_path.setDrawing(false);
+
+                                        if (in_path.isEmpty()) {
+                                            removedDrawPathList.add(in_path);
+                                        } else {
+                                         
+                                                paint.setColor(in_path.pen_color);
+                                                paint.setStrokeWidth(in_path.stroke_width);
+                                                bitmapCanvas.drawPath(in_path, paint);
+                                                in_path.setDrawing(true);
+                                        }
+                                    }
+
+                                    for(DrawPath removed_path : removedDrawPathList) {
+                                        drawPathList.remove(removed_path);
+                                    }
+
+                                    removedDrawPathList.clear();
+                                    invalidate();
+                                }
+
+                            } else {
+                                float TOUCH_TOLERANCE = 0.5f;
+                                float dx = Math.abs(x - mX);
+                                float dy = Math.abs(y - mY);
+
+                                if (dx >= TOUCH_TOLERANCE || dy >= TOUCH_TOLERANCE) {
+
+                                    path.quadTo(mX, mY, (x + mX)/2, (y + mY)/2);
+
+                                    mPath.quadTo(mX, mY, (x + mX)/2, (y + mY)/2);
+                                    mX = x;
+                                    mY = y;
+                                }
+
+                                invalidate();
+                            }
+                        }
+                    }
+                }
+            }
+            catch(Exception e){
+                e.printStackTrace();
+            }
+
+            return true;
+        }
+```
+
 
 ### Creating a New Site
 
